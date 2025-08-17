@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>To‑Do — Simple Web App</title>
+  <style>
+    :root {
+      --bg: #0b1020;         /* deep navy */
+      --panel: #121a33;      /* card */
+      --muted: #7d8db5;      /* muted text */
+      --text: #e8eeff;       /* primary text */
+      --brand: #8aa1ff;      /* accent */
+      --ok: #5bd6a0;         /* success */
+      --warn: #ff9b6b;       /* warn */
+      --danger: #ff6b88;     /* danger */
+      --ring: 0 0 0 3px rgba(138,161,255,.25);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, Noto Sans, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text); background: radial-gradient(1000px 600px at 10% -10%, #18244a 0%, transparent 60%), var(--bg);
+      display: grid; place-items: start center; padding: 32px 16px;
+    }
+    .app { width: 100%; max-width: 760px; }
+    .card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.35); overflow: hidden; }
+    header { padding: 20px 20px 12px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .logo { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, #8aa1ff, #5bd6a0); color: #0a0f1e; font-weight: 800; }
+    h1 { margin: 0; font-size: 18px; letter-spacing: .3px; }
+    .muted { color: var(--muted); }
+
+    .controls { padding: 16px 20px; display: grid; gap: 12px; background: rgba(0,0,0,.15); border-bottom: 1px solid rgba(255,255,255,.08); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .input {
+      flex: 1; min-width: 220px; display: flex; background: var(--panel); border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden;
+    }
+    .input input { flex: 1; padding: 12px 12px; background: transparent; border: 0; color: var(--text); outline: none; }
+    .input input::placeholder { color: #9db0e6; opacity: .65; }
+    .btn { appearance: none; border: 1px solid rgba(255,255,255,.16); background: #18244a; color: var(--text); padding: 10px 12px; border-radius: 12px; cursor: pointer; font-weight: 600; transition: .15s transform ease, .15s background ease, .15s border-color ease; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn.brand { background: linear-gradient(135deg, #7d90ff, #5bd6a0); color: #0b1020; border-color: transparent; }
+    .btn.ghost { background: transparent; }
+
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip { padding: 8px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.05); cursor: pointer; font-weight: 600; }
+    .chip.active { border-color: var(--brand); box-shadow: var(--ring); }
+
+    ul.list { list-style: none; margin: 0; padding: 8px 8px 8px 8px; }
+    .item { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; margin: 8px 4px; border-radius: 12px; background: rgba(11,16,32,.5); border: 1px solid rgba(255,255,255,.08); }
+    .item[draggable="true"] { user-select: none; }
+    .item.dragging { opacity: .6; outline: 2px dashed var(--brand); }
+
+    .check { width: 18px; height: 18px; border-radius: 4px; border: 2px solid #6f86e8; display: grid; place-items: center; cursor: pointer; }
+    .check.done { background: linear-gradient(135deg, #7d90ff, #5bd6a0); border-color: transparent; }
+    .title { padding: 6px 8px; border-radius: 8px; }
+    .title.done { color: #9fb0e1; text-decoration: line-through; }
+    .title[contenteditable="true"] { outline: none; box-shadow: var(--ring); background: rgba(255,255,255,.06); }
+
+    .actions { display: flex; gap: 6px; }
+    .icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); cursor: pointer; }
+    .icon:hover { background: rgba(255,255,255,.08); }
+    .icon.danger { border-color: rgba(255,107,136,.4); }
+
+    .footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 20px 16px; border-top: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.12); }
+    .small { font-size: 13px; color: var(--muted); }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #1b264f; border: 1px solid rgba(255,255,255,.2); padding: 2px 6px; border-radius: 6px; color: #cfe0ff; }
+
+    @media (max-width: 520px) { .actions { gap: 4px } .icon { width: 32px; height: 32px } }
+  </style>
+</head>
+<body>
+  <main class="app card" aria-labelledby="app-title">
+    <header>
+      <div class="logo" aria-hidden="true">✓</div>
+      <div>
+        <h1 id="app-title">To‑Do</h1>
+        <div class="muted small">Lightweight • Offline • Drag & Drop</div>
+      </div>
+    </header>
+
+    <section class="controls" aria-label="Add and filter tasks">
+      <div class="row">
+        <div class="input" role="group" aria-label="Add a task">
+          <input id="newTodo" type="text" placeholder="Add a task and press Enter…" autocomplete="off" />
+        </div>
+        <button id="addBtn" class="btn brand" aria-label="Add task">Add</button>
+        <button id="clearCompletedBtn" class="btn ghost" aria-label="Clear completed">Clear completed</button>
+      </div>
+      <div class="row">
+        <div class="input" role="group" aria-label="Search tasks">
+          <input id="search" type="search" placeholder="Search… (Ctrl/⌘+K)" />
+        </div>
+        <div class="filters" role="tablist" aria-label="Filter tasks">
+          <button class="chip active" data-filter="all" role="tab" aria-selected="true">All</button>
+          <button class="chip" data-filter="active" role="tab">Active</button>
+          <button class="chip" data-filter="completed" role="tab">Completed</button>
+        </div>
+      </div>
+    </section>
+
+    <ul id="list" class="list" aria-live="polite"></ul>
+
+    <div class="footer">
+      <div class="small"><span id="count">0</span> task(s) • Tip: drag to reorder • Double‑click to edit</div>
+      <div class="row">
+        <button id="exportBtn" class="btn ghost" title="Export tasks as JSON">Export</button>
+        <button id="importBtn" class="btn ghost" title="Import tasks from JSON">Import</button>
+        <input id="fileInput" type="file" accept="application/json" hidden />
+      </div>
+    </div>
+  </main>
+
+  <template id="itemTemplate">
+    <li class="item" draggable="true">
+      <button class="check" aria-label="Toggle done" title="Toggle done"></button>
+      <div class="title" contenteditable="false" spellcheck="false"></div>
+      <div class="actions">
+        <button class="icon" data-action="edit" title="Edit" aria-label="Edit" aria-keyshortcuts="Enter">✎</button>
+        <button class="icon danger" data-action="delete" title="Delete" aria-label="Delete">🗑</button>
+      </div>
+    </li>
+  </template>
+
+  <script>
+    const storeKey = 'todo.items.v1';
+    /** @type {Array<{id:string,title:string,done:boolean,order:number,created:number}>} */
+    let items = load();
+    let filter = 'all';
+
+    const els = {
+      list: document.getElementById('list'),
+      tmpl: document.getElementById('itemTemplate'),
+      input: document.getElementById('newTodo'),
+      addBtn: document.getElementById('addBtn'),
+      clearCompletedBtn: document.getElementById('clearCompletedBtn'),
+      chips: Array.from(document.querySelectorAll('.chip')),
+      search: document.getElementById('search'),
+      count: document.getElementById('count'),
+      exportBtn: document.getElementById('exportBtn'),
+      importBtn: document.getElementById('importBtn'),
+      fileInput: document.getElementById('fileInput'),
+    };
+
+    function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36) }
+    function save(){ localStorage.setItem(storeKey, JSON.stringify(items)); }
+    function load(){ try{ return JSON.parse(localStorage.getItem(storeKey)||'[]') }catch{ return [] } }
+
+    function add(title){
+      title = (title||'').trim();
+      if(!title) return;
+      const maxOrder = items.reduce((m,i)=>Math.max(m, i.order||0), 0);
+      items.push({ id: uid(), title, done:false, order: maxOrder+1, created: Date.now() });
+      save(); render();
+    }
+
+    function remove(id){ items = items.filter(i=>i.id!==id); save(); render(); }
+    function toggle(id){ const it=items.find(i=>i.id===id); if(it){ it.done=!it.done; save(); render(); } }
+    function rename(id, title){ const it=items.find(i=>i.id===id); if(it){ it.title=title.trim()||it.title; save(); render(); } }
+    function clearCompleted(){ items = items.filter(i=>!i.done); save(); render(); }
+
+    function setFilter(f){ filter=f; els.chips.forEach(c=>{const on=c.dataset.filter===f; c.classList.toggle('active', on); c.setAttribute('aria-selected', on?'true':'false');}); render(); }
+
+    function matchesFilter(item){
+      if(filter==='active') return !item.done; if(filter==='completed') return item.done; return true;
+    }
+    function matchesSearch(item){
+      const q = els.search.value.trim().toLowerCase(); if(!q) return true; return item.title.toLowerCase().includes(q);
+    }
+
+    function render(){
+      els.list.innerHTML='';
+      const visible = items
+        .slice()
+        .sort((a,b)=> (a.order??0)-(b.order??0))
+        .filter(matchesFilter)
+        .filter(matchesSearch);
+
+      for(const item of visible){
+        const node = els.tmpl.content.firstElementChild.cloneNode(true);
+        node.dataset.id = item.id;
+
+        const check = node.querySelector('.check');
+        const title = node.querySelector('.title');
+
+        if(item.done){ check.classList.add('done'); title.classList.add('done'); check.setAttribute('aria-pressed','true'); } else { check.setAttribute('aria-pressed','false'); }
+        title.textContent = item.title;
+
+        // toggle
+        check.addEventListener('click', ()=> toggle(item.id));
+
+        // edit (dblclick title or click pencil)
+        const startEdit = ()=>{ title.setAttribute('contenteditable','true'); title.focus(); placeCaretEnd(title); };
+        const finishEdit = ()=>{ title.removeAttribute('contenteditable'); rename(item.id, title.textContent||''); };
+        node.querySelector('[data-action="edit"]').addEventListener('click', startEdit);
+        title.addEventListener('dblclick', startEdit);
+        title.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); finishEdit(); } else if(e.key==='Escape'){ title.textContent = item.title; title.blur(); title.removeAttribute('contenteditable'); } });
+        title.addEventListener('blur', finishEdit);
+
+        // delete
+        node.querySelector('[data-action="delete"]').addEventListener('click', ()=> remove(item.id));
+
+        // DnD
+        node.addEventListener('dragstart', e=>{ node.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', item.id); });
+        node.addEventListener('dragend', ()=> node.classList.remove('dragging'));
+
+        els.list.appendChild(node);
+      }
+
+      els.count.textContent = items.filter(i=>!i.done).length;
+    }
+
+    // Drag & Drop reordering within list
+    els.list.addEventListener('dragover', e=>{
+      e.preventDefault();
+      const after = getDragAfterElement(els.list, e.clientY);
+      const dragging = els.list.querySelector('.dragging');
+      if(!dragging) return;
+      if(after == null){ els.list.appendChild(dragging); } else { els.list.insertBefore(dragging, after); }
+    });
+
+    els.list.addEventListener('drop', ()=>{
+      // persist new order
+      const ids = Array.from(els.list.querySelectorAll('.item')).map(n=>n.dataset.id);
+      ids.forEach((id, idx)=>{
+        const it = items.find(i=>i.id===id); if(it) it.order = idx+1;
+      });
+      save(); render();
+    });
+
+    function getDragAfterElement(container, y){
+      const els = [...container.querySelectorAll('.item:not(.dragging)')];
+      return els.reduce((closest, child)=>{
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height/2;
+        if(offset < 0 && offset > closest.offset){ return { offset, element: child }; }
+        else return closest;
+      }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    function placeCaretEnd(el){
+      const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    }
+
+    // Wire controls
+    els.addBtn.addEventListener('click', ()=> { add(els.input.value); els.input.value=''; els.input.focus(); });
+    els.input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ add(els.input.value); els.input.value=''; } });
+    els.clearCompletedBtn.addEventListener('click', clearCompleted);
+
+    els.search.addEventListener('input', render);
+
+    els.chips.forEach(ch=> ch.addEventListener('click', ()=> setFilter(ch.dataset.filter)));
+
+    // Export / Import
+    els.exportBtn.addEventListener('click', ()=>{
+      const data = JSON.stringify(items, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'todos.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    els.importBtn.addEventListener('click', ()=> els.fileInput.click());
+    els.fileInput.addEventListener('change', async (e)=>{
+      const file = e.target.files && e.target.files[0]; if(!file) return;
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        if(Array.isArray(data)){
+          // Keep existing, merge unique by id; fallback create ids
+          const map = new Map(items.map(i=>[i.id,i]));
+          for(const raw of data){
+            const it = { id: raw.id || uid(), title: String(raw.title||'').trim(), done: !!raw.done, order: Number(raw.order)||items.length+1, created: Number(raw.created)||Date.now() };
+            if(!it.title) continue;
+            map.set(it.id, it);
+          }
+          items = Array.from(map.values());
+          save(); render();
+        } else { alert('Invalid file format.'); }
+      } catch { alert('Could not parse JSON.'); }
+      e.target.value = '';
+    });
+
+    // Keyboard: Ctrl/⌘+K focuses search
+    window.addEventListener('keydown', (e)=>{
+      if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); els.search.focus(); }
+    });
+
+    // Initial paint
+    render();
+  </script>
+</body>
+</html>
