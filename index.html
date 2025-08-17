@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>To‑Do — Simple Web App</title>
+  <title>To‑Do — Firebase Auth + Firestore</title>
   <style>
     :root {
       --bg: #0b1020;         /* deep navy */
@@ -65,48 +65,49 @@
 
     .footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 20px 16px; border-top: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.12); }
     .small { font-size: 13px; color: var(--muted); }
-    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #1b264f; border: 1px solid rgba(255,255,255,.2); padding: 2px 6px; border-radius: 6px; color: #cfe0ff; }
+
+    .spacer { flex: 1; }
+    .auth { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .avatar { width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); object-fit: cover; display: none; }
+    .userName { font-size: 13px; color: var(--muted); display: none; }
 
     @media (max-width: 520px) { .actions { gap: 4px } .icon { width: 32px; height: 32px } }
   </style>
 </head>
 <body>
-  <main class="app card" aria-labelledby="app-title">
+  <main class="app">
     <header>
-      <div class="logo" aria-hidden="true">✓</div>
-      <div>
-        <h1 id="app-title">To‑Do</h1>
-        <div class="muted small">Lightweight • Offline • Drag & Drop</div>
+      <div class="logo">✓</div>
+      <h1 style="font-size:18px">To‑Do</h1>
+      <div class="auth">
+        <img id="avatar" class="avatar" alt="avatar" />
+        <span id="who" class="userName"></span>
+        <button id="signInBtn" class="btn">Sign in with Google</button>
+        <button id="signOutBtn" class="btn ghost" style="display:none">Sign out</button>
       </div>
     </header>
 
-    <section class="controls" aria-label="Add and filter tasks">
+    <section class="controls">
       <div class="row">
-        <div class="input" role="group" aria-label="Add a task">
-          <input id="newTodo" type="text" placeholder="Add a task and press Enter…" autocomplete="off" />
-        </div>
-        <button id="addBtn" class="btn brand" aria-label="Add task">Add</button>
-        <button id="clearCompletedBtn" class="btn ghost" aria-label="Clear completed">Clear completed</button>
+        <div class="input"><input id="newTodo" placeholder="Add a task and press Enter…" /></div>
+        <button id="addBtn" class="btn brand">Add</button>
+        <button id="clearCompletedBtn" class="btn">Clear completed</button>
       </div>
       <div class="row">
-        <div class="input" role="group" aria-label="Search tasks">
-          <input id="search" type="search" placeholder="Search… (Ctrl/⌘+K)" />
-        </div>
-        <div class="filters" role="tablist" aria-label="Filter tasks">
-          <button class="chip active" data-filter="all" role="tab" aria-selected="true">All</button>
-          <button class="chip" data-filter="active" role="tab">Active</button>
-          <button class="chip" data-filter="completed" role="tab">Completed</button>
-        </div>
+        <div class="input"><input id="search" type="search" placeholder="Search… (Ctrl/⌘+K)" /></div>
+        <button class="chip active" data-filter="all">All</button>
+        <button class="chip" data-filter="active">Active</button>
+        <button class="chip" data-filter="completed">Completed</button>
       </div>
     </section>
 
-    <ul id="list" class="list" aria-live="polite"></ul>
+    <ul id="list" class="list"></ul>
 
     <div class="footer">
-      <div class="small"><span id="count">0</span> task(s) • Tip: drag to reorder • Double‑click to edit</div>
-      <div class="row">
-        <button id="exportBtn" class="btn ghost" title="Export tasks as JSON">Export</button>
-        <button id="importBtn" class="btn ghost" title="Import tasks from JSON">Import</button>
+      <div><span id="count">0</span> task(s)</div>
+      <div>
+        <button id="exportBtn" class="btn">Export</button>
+        <button id="importBtn" class="btn">Import</button>
         <input id="fileInput" type="file" accept="application/json" hidden />
       </div>
     </div>
@@ -114,20 +115,35 @@
 
   <template id="itemTemplate">
     <li class="item" draggable="true">
-      <button class="check" aria-label="Toggle done" title="Toggle done"></button>
-      <div class="title" contenteditable="false" spellcheck="false"></div>
+      <button class="check"></button>
+      <div class="title" contenteditable="false"></div>
       <div class="actions">
-        <button class="icon" data-action="edit" title="Edit" aria-label="Edit" aria-keyshortcuts="Enter">✎</button>
-        <button class="icon danger" data-action="delete" title="Delete" aria-label="Delete">🗑</button>
+        <button data-action="edit">✎</button>
+        <button data-action="delete">🗑</button>
       </div>
     </li>
   </template>
 
-  <script>
-    const storeKey = 'todo.items.v1';
-    /** @type {Array<{id:string,title:string,done:boolean,order:number,created:number}>} */
-    let items = load();
-    let filter = 'all';
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDsCyo78yufb2XDVw9q2PkBdBmpdMiDeJs",
+      authDomain: "todohtml-92100.firebaseapp.com.firebaseapp.com",
+      projectId: "todohtml-92100",
+      storageBucket: "todohtml-92100.firebasestorage.app.appspot.com",
+      messagingSenderId: "505722759256",
+      appId: "1:505722759256:web:ddf265dcd4a5828551422d"
+    };
+
+    const appFB = initializeApp(firebaseConfig);
+    const db = getFirestore(appFB);
+    const auth = getAuth(appFB);
+    const provider = new GoogleAuthProvider();
+
+    let items = []; let filter = 'all'; let user = null; let unsubTodos = null;
 
     const els = {
       list: document.getElementById('list'),
@@ -141,157 +157,60 @@
       exportBtn: document.getElementById('exportBtn'),
       importBtn: document.getElementById('importBtn'),
       fileInput: document.getElementById('fileInput'),
+      signInBtn: document.getElementById('signInBtn'),
+      signOutBtn: document.getElementById('signOutBtn'),
+      who: document.getElementById('who'),
+      avatar: document.getElementById('avatar')
     };
 
-    function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36) }
-    function save(){ localStorage.setItem(storeKey, JSON.stringify(items)); }
-    function load(){ try{ return JSON.parse(localStorage.getItem(storeKey)||'[]') }catch{ return [] } }
-
-    function add(title){
-      title = (title||'').trim();
-      if(!title) return;
-      const maxOrder = items.reduce((m,i)=>Math.max(m, i.order||0), 0);
-      items.push({ id: uid(), title, done:false, order: maxOrder+1, created: Date.now() });
-      save(); render();
-    }
-
-    function remove(id){ items = items.filter(i=>i.id!==id); save(); render(); }
-    function toggle(id){ const it=items.find(i=>i.id===id); if(it){ it.done=!it.done; save(); render(); } }
-    function rename(id, title){ const it=items.find(i=>i.id===id); if(it){ it.title=title.trim()||it.title; save(); render(); } }
-    function clearCompleted(){ items = items.filter(i=>!i.done); save(); render(); }
-
-    function setFilter(f){ filter=f; els.chips.forEach(c=>{const on=c.dataset.filter===f; c.classList.toggle('active', on); c.setAttribute('aria-selected', on?'true':'false');}); render(); }
-
-    function matchesFilter(item){
-      if(filter==='active') return !item.done; if(filter==='completed') return item.done; return true;
-    }
-    function matchesSearch(item){
-      const q = els.search.value.trim().toLowerCase(); if(!q) return true; return item.title.toLowerCase().includes(q);
-    }
-
-    function render(){
-      els.list.innerHTML='';
-      const visible = items
-        .slice()
-        .sort((a,b)=> (a.order??0)-(b.order??0))
-        .filter(matchesFilter)
-        .filter(matchesSearch);
-
-      for(const item of visible){
-        const node = els.tmpl.content.firstElementChild.cloneNode(true);
-        node.dataset.id = item.id;
-
-        const check = node.querySelector('.check');
-        const title = node.querySelector('.title');
-
-        if(item.done){ check.classList.add('done'); title.classList.add('done'); check.setAttribute('aria-pressed','true'); } else { check.setAttribute('aria-pressed','false'); }
-        title.textContent = item.title;
-
-        // toggle
-        check.addEventListener('click', ()=> toggle(item.id));
-
-        // edit (dblclick title or click pencil)
-        const startEdit = ()=>{ title.setAttribute('contenteditable','true'); title.focus(); placeCaretEnd(title); };
-        const finishEdit = ()=>{ title.removeAttribute('contenteditable'); rename(item.id, title.textContent||''); };
-        node.querySelector('[data-action="edit"]').addEventListener('click', startEdit);
-        title.addEventListener('dblclick', startEdit);
-        title.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); finishEdit(); } else if(e.key==='Escape'){ title.textContent = item.title; title.blur(); title.removeAttribute('contenteditable'); } });
-        title.addEventListener('blur', finishEdit);
-
-        // delete
-        node.querySelector('[data-action="delete"]').addEventListener('click', ()=> remove(item.id));
-
-        // DnD
-        node.addEventListener('dragstart', e=>{ node.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', item.id); });
-        node.addEventListener('dragend', ()=> node.classList.remove('dragging'));
-
-        els.list.appendChild(node);
-      }
-
-      els.count.textContent = items.filter(i=>!i.done).length;
-    }
-
-    // Drag & Drop reordering within list
-    els.list.addEventListener('dragover', e=>{
-      e.preventDefault();
-      const after = getDragAfterElement(els.list, e.clientY);
-      const dragging = els.list.querySelector('.dragging');
-      if(!dragging) return;
-      if(after == null){ els.list.appendChild(dragging); } else { els.list.insertBefore(dragging, after); }
-    });
-
-    els.list.addEventListener('drop', ()=>{
-      // persist new order
-      const ids = Array.from(els.list.querySelectorAll('.item')).map(n=>n.dataset.id);
-      ids.forEach((id, idx)=>{
-        const it = items.find(i=>i.id===id); if(it) it.order = idx+1;
+    function attachTodosListener(){
+      if(unsubTodos) unsubTodos();
+      if(!user){ items=[]; render(); return; }
+      const q = query(collection(db, `users/${user.uid}/todos`), orderBy('order'), orderBy('created'));
+      unsubTodos = onSnapshot(q, snap=>{
+        items = snap.docs.map(d=> ({ id:d.id, ...d.data() }));
+        render();
       });
-      save(); render();
-    });
-
-    function getDragAfterElement(container, y){
-      const els = [...container.querySelectorAll('.item:not(.dragging)')];
-      return els.reduce((closest, child)=>{
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height/2;
-        if(offset < 0 && offset > closest.offset){ return { offset, element: child }; }
-        else return closest;
-      }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
-    function placeCaretEnd(el){
-      const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
-      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    async function add(title){
+      title=(title||'').trim(); if(!title||!user) return;
+      const maxOrder=items.reduce((m,i)=>Math.max(m,i.order||0),0);
+      await addDoc(collection(db,`users/${user.uid}/todos`),{title,done:false,order:maxOrder+1,created:Date.now()});
+      els.input.value='';
     }
+    async function remove(id){ if(user) await deleteDoc(doc(db,`users/${user.uid}/todos`,id)); }
+    async function toggle(id){ const it=items.find(i=>i.id===id); if(it&&user) await updateDoc(doc(db,`users/${user.uid}/todos`,id),{done:!it.done}); }
+    async function rename(id,title){ const it=items.find(i=>i.id===id); if(it&&user) await updateDoc(doc(db,`users/${user.uid}/todos`,id),{title:title.trim()||it.title}); }
+    async function clearCompleted(){ if(!user) return; const batch=writeBatch(db); items.filter(i=>i.done).forEach(i=>batch.delete(doc(db,`users/${user.uid}/todos`,i.id))); await batch.commit(); }
+    async function persistOrder(){ if(!user) return; const nodes=Array.from(els.list.querySelectorAll('.item')); const batch=writeBatch(db); nodes.forEach((n,idx)=>batch.update(doc(db,`users/${user.uid}/todos`,n.dataset.id),{order:idx+1})); await batch.commit(); }
 
-    // Wire controls
-    els.addBtn.addEventListener('click', ()=> { add(els.input.value); els.input.value=''; els.input.focus(); });
-    els.input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ add(els.input.value); els.input.value=''; } });
-    els.clearCompletedBtn.addEventListener('click', clearCompleted);
+    function setFilter(f){ filter=f; els.chips.forEach(c=>{const on=c.dataset.filter===f;c.classList.toggle('active',on);}); render(); }
+    function matchesFilter(i){ if(filter==='active') return !i.done; if(filter==='completed') return i.done; return true; }
+    function matchesSearch(i){ const q=els.search.value.trim().toLowerCase(); if(!q) return true; return (i.title||'').toLowerCase().includes(q); }
+    function render(){ els.list.innerHTML=''; const visible=items.slice().sort((a,b)=>(a.order||0)-(b.order||0)).filter(matchesFilter).filter(matchesSearch); for(const item of visible){ const node=els.tmpl.content.firstElementChild.cloneNode(true); node.dataset.id=item.id; const check=node.querySelector('.check'); const title=node.querySelector('.title'); if(item.done){check.classList.add('done');title.classList.add('done');} title.textContent=item.title; check.addEventListener('click',()=>toggle(item.id)); const startEdit=()=>{title.setAttribute('contenteditable','true');title.focus();placeCaretEnd(title);}; const finishEdit=()=>{title.removeAttribute('contenteditable');rename(item.id,title.textContent||'');}; node.querySelector('[data-action="edit"]').addEventListener('click',startEdit); title.addEventListener('dblclick',startEdit); title.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishEdit();} else if(e.key==='Escape'){title.textContent=item.title;title.blur();title.removeAttribute('contenteditable');}}); title.addEventListener('blur',finishEdit); node.querySelector('[data-action="delete"]').addEventListener('click',()=>remove(item.id)); node.addEventListener('dragstart',e=>{node.classList.add('dragging');e.dataTransfer.effectAllowed='move';}); node.addEventListener('dragend',()=>node.classList.remove('dragging')); els.list.appendChild(node);} els.count.textContent=items.filter(i=>!i.done).length; }
+    function placeCaretEnd(el){ const r=document.createRange();r.selectNodeContents(el);r.collapse(false);const s=window.getSelection();s.removeAllRanges();s.addRange(r); }
 
-    els.search.addEventListener('input', render);
+    els.list.addEventListener('dragover',e=>{e.preventDefault();const after=getDragAfterElement(els.list,e.clientY);const dragging=els.list.querySelector('.dragging');if(!dragging)return;if(after==null){els.list.appendChild(dragging);}else{els.list.insertBefore(dragging,after);}});
+    els.list.addEventListener('drop',()=>persistOrder());
+    function getDragAfterElement(container,y){const els2=[...container.querySelectorAll('.item:not(.dragging)')];return els2.reduce((closest,child)=>{const box=child.getBoundingClientRect();const offset=y-box.top-box.height/2;if(offset<0&&offset>closest.offset){return{offset,element:child};}else return closest;},{offset:Number.NEGATIVE_INFINITY}).element;}
 
-    els.chips.forEach(ch=> ch.addEventListener('click', ()=> setFilter(ch.dataset.filter)));
+    els.addBtn.addEventListener('click',()=>add(els.input.value));
+    els.input.addEventListener('keydown',e=>{if(e.key==='Enter'){add(els.input.value);}});
+    els.clearCompletedBtn.addEventListener('click',clearCompleted);
+    els.search.addEventListener('input',render);
+    els.chips.forEach(ch=>ch.addEventListener('click',()=>setFilter(ch.dataset.filter)));
 
-    // Export / Import
-    els.exportBtn.addEventListener('click', ()=>{
-      const data = JSON.stringify(items, null, 2);
-      const blob = new Blob([data], {type:'application/json'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'todos.json';
-      a.click();
-      URL.revokeObjectURL(a.href);
-    });
+    els.exportBtn.addEventListener('click',async()=>{if(!user)return;const snap=await getDocs(query(collection(db,`users/${user.uid}/todos`)));const data=snap.docs.map(d=>({id:d.id,...d.data()}));const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='todos.json';a.click();URL.revokeObjectURL(a.href);});
+    els.importBtn.addEventListener('click',()=>els.fileInput.click());
+    els.fileInput.addEventListener('change',async e=>{if(!user)return;const f=e.target.files[0];if(!f)return;const text=await f.text();try{const data=JSON.parse(text);if(Array.isArray(data)){const batch=writeBatch(db);data.forEach((raw,idx)=>{const id=raw.id||Date.now()+""+idx;const ref=doc(db,`users/${user.uid}/todos`,id);batch.set(ref,{title:raw.title||'',done:!!raw.done,order:raw.order||idx+1,created:raw.created||Date.now()},{merge:true});});await batch.commit();}}catch{alert('Invalid file');} e.target.value='';});
 
-    els.importBtn.addEventListener('click', ()=> els.fileInput.click());
-    els.fileInput.addEventListener('change', async (e)=>{
-      const file = e.target.files && e.target.files[0]; if(!file) return;
-      const text = await file.text();
-      try {
-        const data = JSON.parse(text);
-        if(Array.isArray(data)){
-          // Keep existing, merge unique by id; fallback create ids
-          const map = new Map(items.map(i=>[i.id,i]));
-          for(const raw of data){
-            const it = { id: raw.id || uid(), title: String(raw.title||'').trim(), done: !!raw.done, order: Number(raw.order)||items.length+1, created: Number(raw.created)||Date.now() };
-            if(!it.title) continue;
-            map.set(it.id, it);
-          }
-          items = Array.from(map.values());
-          save(); render();
-        } else { alert('Invalid file format.'); }
-      } catch { alert('Could not parse JSON.'); }
-      e.target.value = '';
-    });
+    els.signInBtn.addEventListener('click',async()=>{try{await signInWithPopup(auth,provider);}catch(e){console.error(e);}});
+    els.signOutBtn.addEventListener('click',()=>signOut(auth));
 
-    // Keyboard: Ctrl/⌘+K focuses search
-    window.addEventListener('keydown', (e)=>{
-      if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); els.search.focus(); }
-    });
+    onAuthStateChanged(auth,u=>{user=u||null;if(u){els.who.textContent=u.displayName||u.email;els.who.style.display='inline';if(u.photoURL){els.avatar.src=u.photoURL;els.avatar.style.display='inline-block';}els.signInBtn.style.display='none';els.signOutBtn.style.display='inline-block';attachTodosListener();}else{els.who.textContent='';els.who.style.display='none';els.avatar.style.display='none';els.signInBtn.style.display='inline-block';els.signOutBtn.style.display='none';items=[];render();if(unsubTodos)unsubTodos();}});
 
-    // Initial paint
-    render();
+    setFilter('all');
   </script>
 </body>
 </html>
