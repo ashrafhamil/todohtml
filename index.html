@@ -71,6 +71,9 @@
     .avatar { width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); object-fit: cover; display: none; }
     .userName { font-size: 13px; color: var(--muted); display: none; }
 
+    .text { display:flex; flex-direction: column; }
+    .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
     @media (max-width: 520px) { .actions { gap: 4px } .icon { width: 32px; height: 32px } }
   </style>
 </head>
@@ -91,7 +94,7 @@
       <div class="row">
         <div class="input"><input id="newTodo" placeholder="Add a task and press Enter…" /></div>
         <button id="addBtn" class="btn brand">Add</button>
-        <button id="clearCompletedBtn" class="btn">Clear completed</button>
+        <button id="clearCompletedBtn" class="btn" style="display: none;">Clear completed</button>
       </div>
       <div class="row">
         <div class="input"><input id="search" type="search" placeholder="Search… (Ctrl/⌘+K)" /></div>
@@ -116,7 +119,10 @@
   <template id="itemTemplate">
     <li class="item" draggable="true">
       <button class="check"></button>
-      <div class="title" contenteditable="false"></div>
+      <div class="text">
+        <div class="title" contenteditable="false"></div>
+        <div class="meta"></div>
+      </div>
       <div class="actions">
         <button data-action="edit">✎</button>
         <button data-action="delete">🗑</button>
@@ -163,6 +169,8 @@
       avatar: document.getElementById('avatar')
     };
 
+    function formatDate(ms){ if(!ms) return ''; try { return new Date(ms).toLocaleString(); } catch { return ''; } }
+
     function attachTodosListener(){
       if(unsubTodos) unsubTodos();
       if(!user){ items=[]; render(); return; }
@@ -176,11 +184,11 @@
     async function add(title){
       title=(title||'').trim(); if(!title||!user) return;
       const maxOrder=items.reduce((m,i)=>Math.max(m,i.order||0),0);
-      await addDoc(collection(db,`users/${user.uid}/todos`),{title,done:false,order:maxOrder+1,created:Date.now()});
+      await addDoc(collection(db,`users/${user.uid}/todos`),{title,done:false,order:maxOrder+1,created:Date.now(),completedAt:null});
       els.input.value='';
     }
     async function remove(id){ if(user) await deleteDoc(doc(db,`users/${user.uid}/todos`,id)); }
-    async function toggle(id){ const it=items.find(i=>i.id===id); if(it&&user) await updateDoc(doc(db,`users/${user.uid}/todos`,id),{done:!it.done}); }
+    async function toggle(id){ const it=items.find(i=>i.id===id); if(it&&user){ const newDone=!it.done; await updateDoc(doc(db,`users/${user.uid}/todos`,id),{done:newDone, completedAt: newDone? Date.now(): null}); } }
     async function rename(id,title){ const it=items.find(i=>i.id===id); if(it&&user) await updateDoc(doc(db,`users/${user.uid}/todos`,id),{title:title.trim()||it.title}); }
     async function clearCompleted(){ if(!user) return; const batch=writeBatch(db); items.filter(i=>i.done).forEach(i=>batch.delete(doc(db,`users/${user.uid}/todos`,i.id))); await batch.commit(); }
     async function persistOrder(){ if(!user) return; const nodes=Array.from(els.list.querySelectorAll('.item')); const batch=writeBatch(db); nodes.forEach((n,idx)=>batch.update(doc(db,`users/${user.uid}/todos`,n.dataset.id),{order:idx+1})); await batch.commit(); }
@@ -188,7 +196,32 @@
     function setFilter(f){ filter=f; els.chips.forEach(c=>{const on=c.dataset.filter===f;c.classList.toggle('active',on);}); render(); }
     function matchesFilter(i){ if(filter==='active') return !i.done; if(filter==='completed') return i.done; return true; }
     function matchesSearch(i){ const q=els.search.value.trim().toLowerCase(); if(!q) return true; return (i.title||'').toLowerCase().includes(q); }
-    function render(){ els.list.innerHTML=''; const visible=items.slice().sort((a,b)=>(a.order||0)-(b.order||0)).filter(matchesFilter).filter(matchesSearch); for(const item of visible){ const node=els.tmpl.content.firstElementChild.cloneNode(true); node.dataset.id=item.id; const check=node.querySelector('.check'); const title=node.querySelector('.title'); if(item.done){check.classList.add('done');title.classList.add('done');} title.textContent=item.title; check.addEventListener('click',()=>toggle(item.id)); const startEdit=()=>{title.setAttribute('contenteditable','true');title.focus();placeCaretEnd(title);}; const finishEdit=()=>{title.removeAttribute('contenteditable');rename(item.id,title.textContent||'');}; node.querySelector('[data-action="edit"]').addEventListener('click',startEdit); title.addEventListener('dblclick',startEdit); title.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishEdit();} else if(e.key==='Escape'){title.textContent=item.title;title.blur();title.removeAttribute('contenteditable');}}); title.addEventListener('blur',finishEdit); node.querySelector('[data-action="delete"]').addEventListener('click',()=>remove(item.id)); node.addEventListener('dragstart',e=>{node.classList.add('dragging');e.dataTransfer.effectAllowed='move';}); node.addEventListener('dragend',()=>node.classList.remove('dragging')); els.list.appendChild(node);} els.count.textContent=items.filter(i=>!i.done).length; }
+    function render(){
+      els.list.innerHTML='';
+      const visible=items.slice().sort((a,b)=>(a.order||0)-(b.order||0) || (a.created||0)-(b.created||0)).filter(matchesFilter).filter(matchesSearch);
+      for(const item of visible){
+        const node=els.tmpl.content.firstElementChild.cloneNode(true);
+        node.dataset.id=item.id;
+        const check=node.querySelector('.check');
+        const title=node.querySelector('.title');
+        const meta=node.querySelector('.meta');
+        if(item.done){check.classList.add('done');title.classList.add('done');}
+        title.textContent=item.title || '';
+        meta.textContent = item.done ? `Completed: ${formatDate(item.completedAt)}` : `Created: ${formatDate(item.created)}`;
+        check.addEventListener('click',()=>toggle(item.id));
+        const startEdit=()=>{title.setAttribute('contenteditable','true');title.focus();placeCaretEnd(title);};
+        const finishEdit=()=>{title.removeAttribute('contenteditable');rename(item.id,title.textContent||'');};
+        node.querySelector('[data-action="edit"]').addEventListener('click',startEdit);
+        title.addEventListener('dblclick',startEdit);
+        title.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishEdit();} else if(e.key==='Escape'){title.textContent=item.title;title.blur();title.removeAttribute('contenteditable');}});
+        title.addEventListener('blur',finishEdit);
+        node.querySelector('[data-action="delete"]').addEventListener('click',()=>remove(item.id));
+        node.addEventListener('dragstart',e=>{node.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
+        node.addEventListener('dragend',()=>node.classList.remove('dragging'));
+        els.list.appendChild(node);
+      }
+      els.count.textContent=items.filter(i=>!i.done).length;
+    }
     function placeCaretEnd(el){ const r=document.createRange();r.selectNodeContents(el);r.collapse(false);const s=window.getSelection();s.removeAllRanges();s.addRange(r); }
 
     els.list.addEventListener('dragover',e=>{e.preventDefault();const after=getDragAfterElement(els.list,e.clientY);const dragging=els.list.querySelector('.dragging');if(!dragging)return;if(after==null){els.list.appendChild(dragging);}else{els.list.insertBefore(dragging,after);}});
@@ -203,14 +236,14 @@
 
     els.exportBtn.addEventListener('click',async()=>{if(!user)return;const snap=await getDocs(query(collection(db,`users/${user.uid}/todos`)));const data=snap.docs.map(d=>({id:d.id,...d.data()}));const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='todos.json';a.click();URL.revokeObjectURL(a.href);});
     els.importBtn.addEventListener('click',()=>els.fileInput.click());
-    els.fileInput.addEventListener('change',async e=>{if(!user)return;const f=e.target.files[0];if(!f)return;const text=await f.text();try{const data=JSON.parse(text);if(Array.isArray(data)){const batch=writeBatch(db);data.forEach((raw,idx)=>{const id=raw.id||Date.now()+""+idx;const ref=doc(db,`users/${user.uid}/todos`,id);batch.set(ref,{title:raw.title||'',done:!!raw.done,order:raw.order||idx+1,created:raw.created||Date.now()},{merge:true});});await batch.commit();}}catch{alert('Invalid file');} e.target.value='';});
+    els.fileInput.addEventListener('change',async e=>{if(!user)return;const f=e.target.files[0];if(!f)return;const text=await f.text();try{const data=JSON.parse(text);if(Array.isArray(data)){const batch=writeBatch(db);data.forEach((raw,idx)=>{const id=raw.id||Date.now()+""+idx;const ref=doc(db,`users/${user.uid}/todos`,id);batch.set(ref,{title:raw.title||'',done:!!raw.done,order:raw.order||idx+1,created:raw.created||Date.now(), completedAt: raw.completedAt ?? null},{merge:true});});await batch.commit();}}catch{alert('Invalid file');} e.target.value='';});
 
     els.signInBtn.addEventListener('click',async()=>{try{await signInWithPopup(auth,provider);}catch(e){console.error(e);}});
     els.signOutBtn.addEventListener('click',()=>signOut(auth));
 
     onAuthStateChanged(auth,u=>{user=u||null;if(u){els.who.textContent=u.displayName||u.email;els.who.style.display='inline';if(u.photoURL){els.avatar.src=u.photoURL;els.avatar.style.display='inline-block';}els.signInBtn.style.display='none';els.signOutBtn.style.display='inline-block';attachTodosListener();}else{els.who.textContent='';els.who.style.display='none';els.avatar.style.display='none';els.signInBtn.style.display='inline-block';els.signOutBtn.style.display='none';items=[];render();if(unsubTodos)unsubTodos();}});
 
-    setFilter('all');
+    setFilter('all'); // default to show completed if user asked to see them right away
   </script>
 </body>
 </html>
